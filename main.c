@@ -11,6 +11,7 @@
 #define ENEMY_COLS 10
 #define ENEMY_SPACING 10
 #define ENEMY_AMOUNT (ENEMY_ROWS * ENEMY_COLS)
+#define ENEMY_SIZE 20.0
 
 typedef struct {
   Vector2 position;
@@ -32,22 +33,36 @@ typedef struct {
   Bullet bullets[MAX_BULLET_AMOUNT];
   size_t next_bullet;
 
+  float step_size;
+  float step_size_y;
+  int step_dir;
+  float step_acc;
+  float step_interval;
+
+  bool game_over;
+
   Enemy enemies[ENEMY_ROWS * ENEMY_COLS];
 } GameState;
 
 const int game_width = 400;
 const int game_height = 400;
 const float player_height = 50.0f;
-GameState state = {.player_position = {0, game_height - player_height},
-                   .player_size = {50.0f, player_height},
-                   .next_bullet = 0};
+GameState state = {
+    .player_position = {0, game_height - player_height},
+    .player_size = {50.0f, player_height},
+    .next_bullet = 0,
+    .step_size = 15.0,
+    .step_size_y = 25.0,
+    .step_dir = 1,
+    .step_interval = 0.25,
+    .step_acc = 0.0,
+    .game_over = false,
+};
 
 int main(void) {
   InitWindow(game_width, game_height, "space invaders");
 
   {
-    const float ENEMY_SIZE = 20.0;
-
     // init enemies
     for (size_t i = 0; i < ENEMY_AMOUNT; i++) {
       const float row = (float)(i / ENEMY_COLS);
@@ -97,6 +112,91 @@ int main(void) {
     }
 
     // TODO: put enemy updating here!
+    state.step_acc += dt;
+    while (state.step_acc >= state.step_interval) {
+      state.step_acc -= state.step_interval;
+      // advance all enemy positions by some step size in some direction
+
+      float amount_to_move = state.step_size * state.step_dir;
+
+      if (state.step_dir > 0) {
+
+        float max_x = 0.0;
+
+        for (size_t j = 0; j < ENEMY_AMOUNT; j++) {
+          Enemy *curr_enemy = &state.enemies[j];
+          bool alive = curr_enemy->alive;
+
+          if (!alive) {
+            continue;
+          }
+
+          if (curr_enemy->position.x > max_x) {
+            max_x = curr_enemy->position.x;
+          }
+        }
+
+        if (game_width - (max_x + ENEMY_SIZE) <= state.step_size) {
+          amount_to_move = (game_width - (max_x + ENEMY_SIZE));
+          state.step_dir = -1;
+
+          // move all enemies down by step_size_y
+          for (size_t j = 0; j < ENEMY_AMOUNT; j++) {
+            Enemy *curr_enemy = &state.enemies[j];
+            bool alive = curr_enemy->alive;
+
+            if (!alive) {
+              continue;
+            }
+
+            curr_enemy->position.y += state.step_size_y;
+          }
+        }
+      } else {
+        float min_x = game_width;
+
+        for (size_t j = 0; j < ENEMY_AMOUNT; j++) {
+          Enemy *curr_enemy = &state.enemies[j];
+          bool alive = curr_enemy->alive;
+
+          if (!alive) {
+            continue;
+          }
+
+          if (curr_enemy->position.x < min_x) {
+            min_x = curr_enemy->position.x;
+          }
+        }
+
+        if (min_x - state.step_size <= 0) {
+          amount_to_move = -min_x;
+          state.step_dir = 1;
+
+          // move all enemies down by step_size_y
+          for (size_t j = 0; j < ENEMY_AMOUNT; j++) {
+            Enemy *curr_enemy = &state.enemies[j];
+            bool alive = curr_enemy->alive;
+
+            if (!alive) {
+              continue;
+            }
+
+            curr_enemy->position.y += state.step_size_y;
+          }
+        }
+      }
+
+      for (size_t i = 0; i < ENEMY_AMOUNT; i++) {
+        Enemy *curr_enemy = &state.enemies[i];
+
+        curr_enemy->position.x += amount_to_move;
+
+        // check if an enemy is at player height
+        if (curr_enemy->position.y + ENEMY_SIZE >= state.player_position.y) {
+          state.game_over = true;
+        }
+      }
+    }
 
     for (size_t i = 0; i < MAX_BULLET_AMOUNT; i++) {
       Bullet *cur_bullet = &state.bullets[i];
@@ -145,6 +245,14 @@ int main(void) {
     state.player_position.x =
         Clamp(state.player_position.x, 0, game_width - state.player_size.y);
 
+    bool allDead = true;
+    for (size_t i = 0; i < ENEMY_AMOUNT; i++) {
+      if (state.enemies[i].alive) {
+        allDead = false;
+        break;
+      }
+    }
+
     // DRAW
     /////////////////
 
@@ -169,6 +277,14 @@ int main(void) {
       }
 
       DrawRectangleV(cur_enemy.position, cur_enemy.size, GREEN);
+    }
+
+    if (state.game_over) {
+      DrawText("GAME OVER", 0, 0, 50.0, RED);
+    }
+
+    if (allDead) {
+      DrawText("YOU WIN", 0, 0, 50.0, GREEN);
     }
 
     EndDrawing();
